@@ -373,7 +373,7 @@ Enjoy your music 😊
 #         "timeline": timeline
 #     })
 
-@app.route("/analytics")
+@app.route("/analytics/<int:user_id>")
 def analytics(user_id):
 
     # entries = DiaryEntry.query.all()
