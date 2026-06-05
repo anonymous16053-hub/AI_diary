@@ -376,8 +376,7 @@ Enjoy your music 😊
 @app.route("/analytics/<int:user_id>")
 def analytics(user_id):
 
-    # entries = DiaryEntry.query.all()
-    DiaryEntry.query.filter_by(user_id=user_id)
+    entries = DiaryEntry.query.filter_by(user_id=user_id).all()
 
     mood_counts = Counter()
 
