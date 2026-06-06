@@ -13,11 +13,17 @@ class User(db.Model):
 
     password = db.Column(db.String(255), nullable=False)
 
+    theme = db.Column(db.String(20), default="dark")
 
+    ai_personality = db.Column(db.String(50), default="friendly")
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 class DiaryEntry(db.Model):
     __tablename__ = "diary_entries"
 
     id = db.Column(db.Integer, primary_key=True)
+
+    title = db.Column(db.String(20))
 
     user_id = db.Column(
         db.Integer,
@@ -49,6 +55,10 @@ class ChatHistory(db.Model):
     user_message = db.Column(db.Text)
 
     ai_reply = db.Column(db.Text)
+
+    chat_mood = db.Column(
+    db.String(50)
+)
 
     created_at = db.Column(
         db.DateTime,

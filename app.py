@@ -5,7 +5,6 @@ from config import Config
 from database.db import db
 import os
 from datetime import datetime
-from textblob import TextBlob
 from collections import Counter
 from google import genai
 from dotenv import load_dotenv
@@ -116,6 +115,7 @@ def login():
         return jsonify({
             "message": str(e)
         })
+    
 def detect_emotion(text):
 
     prompt = f"""
@@ -149,12 +149,137 @@ def detect_emotion(text):
 
     return response.text.strip()
 
+@app.route("/user/<int:user_id>")
+def get_user(user_id):
+
+    user=User.query.get(user_id)
+
+    if not user:
+        return jsonify({
+            "message": "User not found"
+        }),404
+    return jsonify({
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "theme": user.theme,
+        "ai_personality": user.ai_personality,
+        "created_at": user.created_at.strftime("%Y-%m-%d")
+    })
+
+@app.route("/user/<int:user_id>",methods=["PUT"])
+def update_user(user_id):
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify({
+            "message": "User not found"
+        }),404
+    data = request.json
+
+    user.username = data.get("username", user.username)
+    user.email = data.get("email", user.email)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "User Profile updated successfully"
+    })
+
+@app.route("/preferences/<int:user_id>", methods=["PUT"])
+def update_preferences(user_id):
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify({
+            "message": "User not found"
+        }), 404
+
+    data = request.json
+
+    user.theme = data.get(
+        "theme",
+        user.theme
+    )
+
+    user.ai_personality = data.get(
+        "ai_personality",
+        user.ai_personality
+    )
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Preferences updated"
+    })
+
+@app.route("/change-password/<int:user_id>", methods=["PUT"])
+def change_password(user_id):
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify({
+            "message": "User not found"
+        }), 404
+
+    data = request.json
+
+    current_password = data.get("current_password")
+    new_password = data.get("new_password")
+
+    if not check_password_hash(
+        user.password,
+        current_password
+    ):
+        return jsonify({
+            "message": "Current password is incorrect"
+        }), 400
+
+    user.password = generate_password_hash(
+        new_password
+    )
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Password changed successfully"
+    })
+
+@app.route("/user/<int:user_id>", methods=["DELETE"])
+def delete_user(user_id):
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify({
+            "message": "User not found"
+        }), 404
+
+    DiaryEntry.query.filter_by(
+        user_id=user_id
+    ).delete()
+
+    ChatHistory.query.filter_by(
+        user_id=user_id
+    ).delete()
+
+    db.session.delete(user)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Account deleted successfully"
+    })
+
 @app.route("/save", methods=["POST"])
 def save_entry():
 
     data = request.json
     entry = data.get("entry")
     user_id = data.get("user_id")
+    title = data.get("title")
 
     try:
         #mood Detection
@@ -173,6 +298,7 @@ def save_entry():
         #     mood = "Neutral 😐"
 
         entry_record = DiaryEntry(
+            title=title,
             user_id=user_id,
             entry_text=entry,
             mood=emotion
@@ -180,6 +306,7 @@ def save_entry():
         db.session.add(entry_record)
         db.session.commit()
         return jsonify({
+            "title": title,
             "message": "Saved successfully!",
             "mood": emotion
         })
@@ -190,8 +317,6 @@ def save_entry():
             "message": str(e)
         })
     
-
-
 def emotional_response(user_message, reply):
     text = user_message.lower()
 
@@ -214,18 +339,18 @@ def chat():
     user_message = request.json.get("message")
     user_id = data.get("user_id")
 
+    user = User.query.get(user_id)
+
+    personality = (
+    user.ai_personality
+    if user
+    else "friendly"
+)
 
     try:
 
         # Mood detection
-        analysis = TextBlob(user_message)
-
-        if analysis.sentiment.polarity > 0:
-            mood = "Positive 😊"
-        elif analysis.sentiment.polarity < 0:
-            mood = "Negative 😔"
-        else:
-            mood = "Neutral 😐"
+        mood = detect_emotion(user_message)
 
         previous_chats = (
         ChatHistory.query
@@ -233,18 +358,65 @@ def chat():
         .order_by(ChatHistory.created_at.desc())
         .limit(5)
         .all()
-        )
+    )
+
         conversation_history = ""
 
-        for chat in reversed(previous_chats):
-            conversation_history += f"""
-            User: {chat.user_message}
-            AI: {chat.ai_reply}
-"""
+        if personality == "friendly":
 
+            personality_prompt = """
+            Be warm, friendly and conversational.
+            Talk like a supportive friend.
+            """
+
+        elif personality == "professional":
+
+            personality_prompt = """
+            Be professional, concise and objective.
+            Focus on practical advice.
+            """
+
+        elif personality == "motivational":
+
+            personality_prompt = """
+            Be energetic and motivational.
+            Encourage the user and focus on growth.
+            """
+
+        elif personality == "therapist":
+
+            personality_prompt = """
+            Be empathetic and reflective.
+            Help the user explore emotions.
+            Do not diagnose conditions.
+            """
+
+        else:
+
+            personality_prompt = """
+            Be warm and supportive.
+            """
+
+        for chat in reversed(previous_chats):
+                    conversation_history += f"""
+                    User: {chat.user_message}
+                    AI: {chat.ai_reply}
+        """
+
+        # {personality}
 
         # prompt
         prompt = f"""
+
+        {personality_prompt}
+
+        Previous Conversation:
+        {conversation_history}
+
+        User Mood: {mood}
+
+        User Message: {user_message}
+
         You are an intelligent emotional AI diary assistant.
         
 
@@ -288,7 +460,7 @@ def chat():
         # Gemini response
         response = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=prompt
+            contents=prompt,
             )
         
         reply = response.text
@@ -298,17 +470,20 @@ def chat():
 
         date = datetime.now().strftime("%Y-%m-%d")
         chat_record = ChatHistory(
-        user_id=user_id,
-        user_message=user_message,
-        ai_reply=reply
-        )
+    user_id=user_id,
+    user_message=user_message,
+    ai_reply=reply,
+    chat_mood=mood
+)
 
         db.session.add(chat_record)
         db.session.commit()
 
         return jsonify({
             "reply": reply,
-            "mood": mood
+            "mood": mood,
+            "preference":personality
+
         })
 
     except Exception as e:
@@ -318,7 +493,6 @@ def chat():
             "reply": str(e),
             "mood": "Error"
         })
-
     
 def custom_music_response(message):
 
@@ -391,10 +565,24 @@ def analytics(user_id):
             "mood": entry.mood
         })
 
+    dominant_mood = (
+    max(mood_counts, key=mood_counts.get)
+    if mood_counts
+    else "None"
+)
+    latest_mood = (
+    entries[-1].mood
+    if entries
+    else "None"
+)
+
     return jsonify({
-        "counts": dict(mood_counts),
-        "timeline": timeline
-    })
+    "total_entries": len(entries),
+    "dominant_mood": dominant_mood,
+    "counts": dict(mood_counts),
+    "latest_mood": latest_mood,
+    "timeline": timeline
+})
 
 
 @app.route("/history/<int:user_id>")
@@ -411,6 +599,7 @@ def history(user_id):
         data = []
         for entry in entries:
             data.append({
+                "title": entry.title,
                 "text": entry.entry_text,
                 "mood": entry.mood,
                 "date": entry.created_at.strftime("%Y-%m-%d")
@@ -423,6 +612,42 @@ def history(user_id):
         return jsonify({
             "message": str(e)
         })
+
+@app.route("/chat-history/<int:user_id>")
+def get_chat_history(user_id):
+
+    chats = (
+        ChatHistory.query
+        .filter_by(user_id=user_id)
+        .order_by(ChatHistory.created_at.asc())
+        .all()
+    )
+
+    chat_list = []
+
+    for chat in chats:
+
+        chat_list.append({
+            "user_message": chat.user_message,
+            "ai_reply": chat.ai_reply,
+            "mood": chat.chat_mood,
+            "date": chat.created_at.strftime("%Y-%m-%d %H:%M")
+        })
+
+    return jsonify(chat_list)
+
+@app.route("/chat-history/<int:user_id>", methods=["DELETE"])
+def delete_chat_history(user_id):
+
+    ChatHistory.query.filter_by(
+        user_id=user_id
+    ).delete()
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Chat history deleted"
+    })
 
 if __name__ == "__main__":
     app.run(debug=True)
