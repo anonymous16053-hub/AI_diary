@@ -331,6 +331,71 @@ def emotional_response(user_message, reply):
 
     return reply
 
+@app.route("/entry/<int:entry_id>", methods=["GET"])
+def get_entry(entry_id):
+
+    entry = DiaryEntry.query.get(entry_id)
+
+    if not entry:
+        return jsonify({
+            "message": "Entry not found"
+        }), 404
+
+    return jsonify({
+        "id": entry.id,
+        "title": entry.title,
+        "text": entry.entry_text,
+        "mood": entry.mood,
+        "date": entry.created_at.strftime("%Y-%m-%d")
+    })
+
+@app.route("/entry/<int:entry_id>", methods=["PUT"])
+def update_entry(entry_id):
+
+    entry = DiaryEntry.query.get(entry_id)
+
+    if not entry:
+        return jsonify({
+            "message": "Entry not found"
+        }), 404
+
+    data = request.json
+
+    entry.title = data.get(
+        "title",
+        entry.title
+    )
+
+    entry.entry_text = data.get(
+        "text",
+        entry.entry_text
+    )
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Entry updated"
+    })
+
+@app.route("/entry/<int:entry_id>", methods=["DELETE"])
+def delete_entry(entry_id):
+
+    entry = DiaryEntry.query.get(entry_id)
+
+    if not entry:
+        return jsonify({
+            "message": "Entry not found"
+        }), 404
+
+    db.session.delete(entry)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Entry deleted"
+    })
+
+
 #chat
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -599,6 +664,7 @@ def history(user_id):
         data = []
         for entry in entries:
             data.append({
+                "id": entry.id,
                 "title": entry.title,
                 "text": entry.entry_text,
                 "mood": entry.mood,
