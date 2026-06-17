@@ -8,7 +8,8 @@ from datetime import datetime
 from collections import Counter
 from google import genai
 from dotenv import load_dotenv
-
+import re
+from sqlalchemy import or_
 from models.models import User, DiaryEntry, ChatHistory
 
 
@@ -47,7 +48,17 @@ def register():
     password = data.get("password")
 
     try:
+        email_pattern = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
+        # password_regex =r' /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/'
+        if not re.match(email_pattern, email):
+            return jsonify({
+                "message": "Invalid email"
+                }), 400
 
+        # if not re.match(password_regex, password):
+        #     return jsonify({
+        #         "message":"Weak password"
+        #         }), 400
         existing_user = User.query.filter_by(
             username=username
         ).first()
@@ -55,6 +66,14 @@ def register():
         if existing_user:
             return jsonify({
                 "message": "Username already exists"
+            })
+        existing_email = User.query.filter_by(
+            email=email
+        ).first()
+
+        if existing_email:
+            return jsonify({
+                "message": "Email already exists"
             })
 
         hashed_password = generate_password_hash(password)
@@ -87,13 +106,15 @@ def login():
 
     data = request.json
 
-    username = data.get("username")
+    identifier = data.get("identifier")
     password = data.get("password")
 
     try:
 
-        user = User.query.filter_by(
-            username=username
+        user = User.query.filter(
+            or_(
+            User.email==identifier,
+            User.username==identifier)
         ).first()
 
         if user and check_password_hash(
@@ -104,18 +125,20 @@ def login():
             return jsonify({
                 "message": "Login success",
                 "user_id": user.id
-            })
+            }), 200
 
         return jsonify({
             "message": "Invalid credentials"
-        })
+        }), 401
 
     except Exception as e:
 
         return jsonify({
             "message": str(e)
-        })
-    
+        }), 500
+
+
+        
 def detect_emotion(text):
 
     prompt = f"""
